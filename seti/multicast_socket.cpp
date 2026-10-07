@@ -7,10 +7,12 @@
 #include <netinet/in.h>
 #include <unistd.h>
 
+#include <algorithm>
 #include <cerrno>
 #include <cstring>
 #include <iostream>
 #include <stdexcept>
+#include <vector>
 
 #include "common.h"
 
@@ -31,21 +33,83 @@ std::string addrToString(const sockaddr* sa, socklen_t len) {
     return host;
 }
 
-in_addr ipv4AddrOfInterface(const std::string& name) {
+struct InterfaceInfo {
+    std::string name;
+    unsigned int flags = 0;
+    bool hasIPv4 = false;
+    bool hasIPv6 = false;
+    in_addr ipv4{};
+};
+
+std::vector<InterfaceInfo> listInterfaces() {
     ifaddrs* list = nullptr;
     if (getifaddrs(&list) < 0) throw std::runtime_error(sysError("getifaddrs"));
-    in_addr result{};
-    bool found = false;
+
+    std::vector<InterfaceInfo> result;
     for (ifaddrs* it = list; it != nullptr; it = it->ifa_next) {
-        if (it->ifa_addr && it->ifa_addr->sa_family == AF_INET && name == it->ifa_name) {
-            result = reinterpret_cast<sockaddr_in*>(it->ifa_addr)->sin_addr;
-            found = true;
-            break;
+        auto pos = std::find_if(result.begin(), result.end(),
+                                [&](const InterfaceInfo& i) { return i.name == it->ifa_name; });
+        if (pos == result.end()) {
+            result.push_back(InterfaceInfo{});
+            pos = result.end() - 1;
+            pos->name = it->ifa_name;
+        }
+        pos->flags |= it->ifa_flags;
+        if (it->ifa_addr == nullptr) continue;
+        if (it->ifa_addr->sa_family == AF_INET && !pos->hasIPv4) {
+            pos->hasIPv4 = true;
+            pos->ipv4 = reinterpret_cast<sockaddr_in*>(it->ifa_addr)->sin_addr;
+        } else if (it->ifa_addr->sa_family == AF_INET6) {
+            pos->hasIPv6 = true;
         }
     }
     freeifaddrs(list);
-    if (!found) throw std::runtime_error("у интерфейса '" + name + "' нет IPv4-адреса");
     return result;
+}
+
+const char* familyName(int family) { return family == AF_INET ? "IPv4" : "IPv6"; }
+
+bool hasAddress(const InterfaceInfo& i, int family) {
+    return family == AF_INET ? i.hasIPv4 : i.hasIPv6;
+}
+
+void requireUsable(const InterfaceInfo& i, int family) {
+    const std::string prefix = "интерфейс '" + i.name + "' ";
+    if (!(i.flags & IFF_UP)) throw std::runtime_error(prefix + "не поднят");
+    if (!(i.flags & IFF_MULTICAST)) throw std::runtime_error(prefix + "не поддерживает multicast");
+    if (!hasAddress(i, family))
+        throw std::runtime_error(prefix + "не имеет " + familyName(family) + "-адреса");
+}
+
+bool isAutoCandidate(const InterfaceInfo& i, int family) {
+    return (i.flags & IFF_UP) && (i.flags & IFF_RUNNING) && (i.flags & IFF_MULTICAST) &&
+           !(i.flags & IFF_LOOPBACK) && hasAddress(i, family);
+}
+
+InterfaceInfo selectInterface(int family, const std::string& requested) {
+    const std::vector<InterfaceInfo> all = listInterfaces();
+
+    if (!requested.empty()) {
+        auto pos = std::find_if(all.begin(), all.end(),
+                                [&](const InterfaceInfo& i) { return i.name == requested; });
+        if (pos == all.end()) throw std::runtime_error("интерфейс '" + requested + "' не найден");
+        requireUsable(*pos, family);
+        return *pos;
+    }
+
+    std::vector<InterfaceInfo> candidates;
+    for (const auto& i : all)
+        if (isAutoCandidate(i, family)) candidates.push_back(i);
+
+    if (candidates.empty())
+        throw std::runtime_error("не найден подходящий сетевой интерфейс. Укажите интерфейс третьим аргументом.");
+    if (candidates.size() > 1) {
+        std::string names;
+        for (const auto& i : candidates) names += (names.empty() ? "" : ", ") + i.name;
+        std::cerr << "Предупреждение: подходящие интерфейсы - " << names << ", выбран "
+                  << candidates.front().name << ". Указать явно его можно третьим аргументом.\n";
+    }
+    return candidates.front();
 }
 }
 
@@ -65,12 +129,10 @@ MulticastSocket::~MulticastSocket() {
 
 bool MulticastSocket::isIPv6() const { return family_ == AF_INET6; }
 
-void MulticastSocket::send(const std::string& msg) {
+bool MulticastSocket::send(const std::string& msg) {
     ssize_t n = ::sendto(fd_, msg.data(), msg.size(), 0,
                          reinterpret_cast<const sockaddr*>(&group_), groupLen_);
-    if (n < 0) {
-        std::cerr << "[" << timeStamp() << "] sendto: " << std::strerror(errno) << "\n";
-    }
+    return n >= 0;
 }
 
 std::optional<Datagram> MulticastSocket::receive() {
@@ -107,25 +169,30 @@ void MulticastSocket::resolveGroup(const std::string& group, uint16_t port) {
     if (family_ == AF_INET) {
         auto* a = reinterpret_cast<sockaddr_in*>(&group_);
         if (!IN_MULTICAST(ntohl(a->sin_addr.s_addr)))
-            throw std::runtime_error("Адрес " + group + " не является multicast-адресом IPv4 (224.0.0.0/4)");
+            throw std::runtime_error("Адрес " + group + " не является multicast-адресом IPv4");
         a->sin_port = htons(port);
     } else if (family_ == AF_INET6) {
         auto* a = reinterpret_cast<sockaddr_in6*>(&group_);
         if (!IN6_IS_ADDR_MULTICAST(&a->sin6_addr))
-            throw std::runtime_error("Адрес " + group + " не является multicast-адресом IPv6 (ff00::/8)");
+            throw std::runtime_error("Адрес " + group + " не является multicast-адресом IPv6");
         a->sin6_port = htons(port);
     } else {
         throw std::runtime_error("Неподдерживаемое семейство адресов");
     }
 }
 
-unsigned int MulticastSocket::resolveIPv6Interface(unsigned int zoneIndex, const std::string& iface) {
-    if (iface.empty()) return zoneIndex;
-    unsigned int idx = if_nametoindex(iface.c_str());
-    if (idx == 0) throw std::runtime_error("интерфейс '" + iface + "' не найден");
-    if (zoneIndex != 0 && zoneIndex != idx)
+std::string MulticastSocket::requestedInterface(const std::string& iface) const {
+    if (family_ != AF_INET6) return iface;
+
+    unsigned int zoneIndex = reinterpret_cast<const sockaddr_in6*>(&group_)->sin6_scope_id;
+    if (zoneIndex == 0) return iface;
+
+    char zoneName[IF_NAMESIZE];
+    if (if_indextoname(zoneIndex, zoneName) == nullptr)
+        throw std::runtime_error(sysError("if_indextoname"));
+    if (!iface.empty() && iface != zoneName)
         throw std::runtime_error("интерфейс в адресе (%зона) и в аргументе не совпадают");
-    return idx;
+    return zoneName;
 }
 
 void MulticastSocket::setOpt(int level, int name, const void* val, socklen_t len, const char* what) {
@@ -142,13 +209,19 @@ void MulticastSocket::openSocket(uint16_t port, const std::string& iface) {
 #ifdef SO_REUSEPORT
     setOpt(SOL_SOCKET, SO_REUSEPORT, &on, sizeof(on), "SO_REUSEPORT");
 #endif
+
+    const std::string requested = requestedInterface(iface);
+    ifaceAuto_ = requested.empty();
+    const InterfaceInfo info = selectInterface(family_, requested);
+    ifaceName_ = info.name;
+
     if (family_ == AF_INET)
-        setupIPv4(port, iface);
+        setupIPv4(port, info.ipv4);
     else
-        setupIPv6(port, iface);
+        setupIPv6(port);
 }
 
-void MulticastSocket::setupIPv4(uint16_t port, const std::string& iface) {
+void MulticastSocket::setupIPv4(uint16_t port, in_addr ifAddr) {
     sockaddr_in local{};
     local.sin_family = AF_INET;
     local.sin_addr.s_addr = htonl(INADDR_ANY);
@@ -156,16 +229,11 @@ void MulticastSocket::setupIPv4(uint16_t port, const std::string& iface) {
     if (::bind(fd_, reinterpret_cast<sockaddr*>(&local), sizeof(local)) < 0)
         throw std::runtime_error(sysError("bind"));
 
-    in_addr ifAddr{};
-    ifAddr.s_addr = htonl(INADDR_ANY);
-    if (!iface.empty()) ifAddr = ipv4AddrOfInterface(iface);
-
     ip_mreq mreq{};
     mreq.imr_multiaddr = reinterpret_cast<sockaddr_in*>(&group_)->sin_addr;
     mreq.imr_interface = ifAddr;
     setOpt(IPPROTO_IP, IP_ADD_MEMBERSHIP, &mreq, sizeof(mreq), "IP_ADD_MEMBERSHIP");
-    if (!iface.empty())
-        setOpt(IPPROTO_IP, IP_MULTICAST_IF, &ifAddr, sizeof(ifAddr), "IP_MULTICAST_IF");
+    setOpt(IPPROTO_IP, IP_MULTICAST_IF, &ifAddr, sizeof(ifAddr), "IP_MULTICAST_IF");
 
     unsigned char loop = kMulticastLoopV4;
     unsigned char ttl = kMulticastTtlV4;
@@ -173,7 +241,7 @@ void MulticastSocket::setupIPv4(uint16_t port, const std::string& iface) {
     setOpt(IPPROTO_IP, IP_MULTICAST_TTL, &ttl, sizeof(ttl), "IP_MULTICAST_TTL");
 }
 
-void MulticastSocket::setupIPv6(uint16_t port, const std::string& iface) {
+void MulticastSocket::setupIPv6(uint16_t port) {
     int on = kSockOptOn;
     setOpt(IPPROTO_IPV6, IPV6_V6ONLY, &on, sizeof(on), "IPV6_V6ONLY");
 
@@ -184,13 +252,11 @@ void MulticastSocket::setupIPv6(uint16_t port, const std::string& iface) {
     if (::bind(fd_, reinterpret_cast<sockaddr*>(&local), sizeof(local)) < 0)
         throw std::runtime_error(sysError("bind"));
 
+    unsigned int ifIndex = if_nametoindex(ifaceName_.c_str());
+    if (ifIndex == 0) throw std::runtime_error(sysError("if_nametoindex"));
+
     auto* group6 = reinterpret_cast<sockaddr_in6*>(&group_);
-    unsigned int ifIndex = resolveIPv6Interface(group6->sin6_scope_id, iface);
     group6->sin6_scope_id = ifIndex;
-    if (ifIndex == 0 && IN6_IS_ADDR_MC_LINKLOCAL(&group6->sin6_addr))
-        std::cerr << "Предупреждение: для link-local группы не указан интерфейс, "
-                     "будет выбран интерфейс по умолчанию. Укажите его: "
-                     "ff02::4321%eth0 или третьим аргументом.\n";
 
     ipv6_mreq mreq{};
     mreq.ipv6mr_multiaddr = group6->sin6_addr;
@@ -201,8 +267,7 @@ void MulticastSocket::setupIPv6(uint16_t port, const std::string& iface) {
     int hops = kMulticastHopsV6;
     setOpt(IPPROTO_IPV6, IPV6_MULTICAST_LOOP, &loop, sizeof(loop), "IPV6_MULTICAST_LOOP");
     setOpt(IPPROTO_IPV6, IPV6_MULTICAST_HOPS, &hops, sizeof(hops), "IPV6_MULTICAST_HOPS");
-    if (ifIndex != 0)
-        setOpt(IPPROTO_IPV6, IPV6_MULTICAST_IF, &ifIndex, sizeof(ifIndex), "IPV6_MULTICAST_IF");
+    setOpt(IPPROTO_IPV6, IPV6_MULTICAST_IF, &ifIndex, sizeof(ifIndex), "IPV6_MULTICAST_IF");
 }
 
 }

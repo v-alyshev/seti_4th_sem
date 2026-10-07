@@ -55,7 +55,8 @@ void installSignalHandlers() {
 void printStartupMessage(const Args& args, const MulticastSocket& sock, const std::string& myId) {
     std::cout << "Копия " << myId << " запущена. Группа " << args.group << ", порт " << args.port
               << ", протокол " << (sock.isIPv6() ? "IPv6" : "IPv4")
-              << ", интерфейс " << (args.iface.empty() ? "по умолчанию" : args.iface) << ".\n"
+              << ", интерфейс " << sock.interfaceName()
+              << (sock.interfaceAutoSelected() ? " (выбран автоматически)" : "") << ".\n"
               << "Для выхода нажмите Ctrl+C.\n";
 }
 
