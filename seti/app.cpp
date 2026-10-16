@@ -3,6 +3,7 @@
 #include <poll.h>
 #include <signal.h>
 
+#include <algorithm>
 #include <cerrno>
 #include <csignal>
 #include <cstdlib>
@@ -28,6 +29,7 @@ constexpr long kMinPort = 1;
 constexpr long kMaxPort = 65535;
 constexpr int kDecimalBase = 10;
 constexpr nfds_t kPollFdCount = 1;
+constexpr auto kStatsInterval = std::chrono::seconds(10);
 
 volatile std::sig_atomic_t g_stop = 0;
 
@@ -82,12 +84,18 @@ void runLoop(MulticastSocket& sock, const std::string& myId) {
     Listener listener(sock, peers, myId);
 
     peers.print();
+    auto nextStats = Clock::now() + kStatsInterval;
 
     while (!g_stop) {
         auto nextSend = announcer.tick(Clock::now());
 
+        if (Clock::now() >= nextStats) {
+            peers.printStatistics("Статистика потерь");
+            nextStats += kStatsInterval;
+        }
+
         bool changed = false;
-        if (waitReadable(sock.fd(), nextSend))
+        if (waitReadable(sock.fd(), std::min(nextSend, nextStats)))
             changed |= listener.handleIncoming(Clock::now());
         changed |= peers.expire(Clock::now());
 
@@ -95,7 +103,9 @@ void runLoop(MulticastSocket& sock, const std::string& myId) {
     }
 
     announcer.sayBye();
-    std::cout << "\nЗавершение работы.\n";
+    std::cout << "\n";
+    peers.printStatistics("Итоговая статистика");
+    std::cout << "Завершение работы.\n";
 }
 }
 

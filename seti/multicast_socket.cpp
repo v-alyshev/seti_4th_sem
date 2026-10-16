@@ -102,7 +102,7 @@ InterfaceInfo selectInterface(int family, const std::string& requested) {
         if (isAutoCandidate(i, family)) candidates.push_back(i);
 
     if (candidates.empty())
-        throw std::runtime_error("не найден подходящий сетевой интерфейс. Укажите интерфейс третьим аргументом.");
+        throw std::runtime_error(std::string("не найден подходящий сетевой интерфейс. Укажите интерфейс третьим аргументом."));
     if (candidates.size() > 1) {
         std::string names;
         for (const auto& i : candidates) names += (names.empty() ? "" : ", ") + i.name;

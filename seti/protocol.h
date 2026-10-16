@@ -1,23 +1,25 @@
 #pragma once
 
 #include <chrono>
+#include <cstdint>
 #include <optional>
 #include <string>
 
 namespace lan_copies {
 
-    constexpr auto kSendInterval = std::chrono::seconds(1);
-    constexpr auto kPeerTimeout = std::chrono::seconds(5);
+constexpr auto kSendInterval = std::chrono::seconds(1);
+constexpr auto kPeerTimeout = std::chrono::seconds(5);
 
-    enum class MessageType { Hello, Bye };
+enum class MessageType { Hello, Bye };
 
-    struct Message {
-        MessageType type;
-        std::string id;
-    };
+struct Message {
+    MessageType type;
+    std::string id;
+    uint64_t seq;
+};
 
-    std::string randomId();
-    std::string buildMessage(MessageType type, const std::string& id);
-    std::optional<Message> parseMessage(const std::string& data);
+std::string randomId();
+std::string buildMessage(MessageType type, const std::string& id, uint64_t seq);
+std::optional<Message> parseMessage(const std::string& data);
 
 }

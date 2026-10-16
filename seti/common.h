@@ -5,9 +5,9 @@
 
 namespace lan_copies {
 
-    using Clock = std::chrono::steady_clock;
+using Clock = std::chrono::steady_clock;
 
-    std::string sysError(const std::string& what);
-    std::string timeStamp();
+std::string sysError(const std::string& what);
+std::string timeStamp();
 
 }
