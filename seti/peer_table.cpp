@@ -17,6 +17,13 @@ constexpr double kPercent = 100.0;
 constexpr int kPercentPrecision = 1;
 }
 
+PeerTable::PeerTable() : startTime_(Clock::now()) {}
+
+uint64_t PeerTable::expectedFirst(uint64_t seq, Clock::time_point now) const {
+    const auto intervalsListened = static_cast<uint64_t>((now - startTime_) / kSendInterval);
+    return seq <= intervalsListened ? 0 : seq;
+}
+
 bool PeerTable::onHello(const std::string& id, const std::string& ip, uint64_t seq,
                         Clock::time_point now) {
     auto [it, inserted] = peers_.try_emplace(id, Peer{ip, now, SequenceTracker{}});
@@ -26,16 +33,20 @@ bool PeerTable::onHello(const std::string& id, const std::string& ip, uint64_t s
     peer.ip = ip;
     peer.lastSeen = now;
 
-    const SeqEvent event = peer.seq.accept(seq);
+    const SeqEvent event = peer.seq.accept(seq, expectedFirst(seq, now));
     reportSeqEvent(id, peer, event, seq);
     return changed;
 }
 
-bool PeerTable::onBye(const std::string& id) {
+bool PeerTable::onBye(const std::string& id, uint64_t seq) {
     auto it = peers_.find(id);
     if (it == peers_.end()) return false;
+
+    const uint64_t tail = it->second.seq.finish(seq);
     std::cout << "[" << timeStamp() << "] Копия " << describe(it->first, it->second)
-              << " завершила работу. " << formatStats(it->second.seq) << "\n";
+              << " завершила работу";
+    if (tail > 0) std::cout << " (не дошло последних сообщений: " << tail << ")";
+    std::cout << ". " << formatStats(it->second.seq) << "\n";
     peers_.erase(it);
     return true;
 }
@@ -104,6 +115,9 @@ void PeerTable::reportSeqEvent(const std::string& id, const Peer& peer, SeqEvent
             break;
         case SeqEvent::Duplicate:
             oss << "повтор сообщения #" << seq << ", пропущен";
+            break;
+        case SeqEvent::BeforeStart:
+            oss << "сообщение #" << seq << " отправлено до начала наблюдения, пропущено";
             break;
     }
     std::cout << "[" << timeStamp() << "] " << describe(id, peer) << ": " << oss.str() << ". "

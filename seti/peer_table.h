@@ -11,8 +11,10 @@ namespace lan_copies {
 
 class PeerTable {
 public:
+    PeerTable();
+
     bool onHello(const std::string& id, const std::string& ip, uint64_t seq, Clock::time_point now);
-    bool onBye(const std::string& id);
+    bool onBye(const std::string& id, uint64_t seq);
     bool expire(Clock::time_point now);
     void print() const;
     void printStatistics(const std::string& title) const;
@@ -24,6 +26,9 @@ private:
         SequenceTracker seq;
     };
     std::map<std::string, Peer> peers_;
+    const Clock::time_point startTime_;
+
+    uint64_t expectedFirst(uint64_t seq, Clock::time_point now) const;
 
     static std::string describe(const std::string& id, const Peer& peer);
     static std::string formatStats(const SequenceTracker& seq);

@@ -16,7 +16,7 @@ bool Listener::handleIncoming(Clock::time_point now) {
 
     if (msg->type == MessageType::Hello)
         return peers_.onHello(msg->id, datagram->fromIp, msg->seq, now);
-    return peers_.onBye(msg->id);
+    return peers_.onBye(msg->id, msg->seq);
 }
 
 }
