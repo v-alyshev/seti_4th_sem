@@ -19,7 +19,7 @@ UniqueFd tryListen(int family, std::uint16_t port) {
     int rc;
     if (family == AF_INET6) {
         int off = 0;
-        ::setsockopt(fd.get(), IPPROTO_IPV6, IPV6_V6ONLY, &off, sizeof off);
+        if (::setsockopt(fd.get(), IPPROTO_IPV6, IPV6_V6ONLY, &off, sizeof off) != 0) return UniqueFd();
         sockaddr_in6 addr{};
         addr.sin6_family = AF_INET6;
         addr.sin6_addr = in6addr_any;

@@ -43,7 +43,7 @@ void ClientSession::run() noexcept {
         }
         finish(received);
     } catch (...) {
-        if (fileCreated_) storage_.remove(savedName_);
+        if (fileCreated_ && !saved_) storage_.remove(savedName_);
     }
 }
 
@@ -55,7 +55,9 @@ void ClientSession::receiveFile() {
     fileCreated_ = true;
     conn_.setFileName(savedName_);
 
+    conn_.beginFileBody();
     std::uint64_t received = receiveBody(file.get(), size_);
+    conn_.endFileBody();
     if (file.close() != 0) throwErrno("ошибка закрытия файла");
 
     if (received != size_)
@@ -101,19 +103,22 @@ void ClientSession::expectEndOfData() {
 }
 
 void ClientSession::finish(bool received) {
+    saved_ = received;
     conn_.finalReport();
 
-    bool delivered = conn_.sendStatus(received ? proto::STATUS_OK : proto::STATUS_FAIL);
-    bool ok = received && delivered;
+    if (!saved_ && fileCreated_) storage_.remove(savedName_);
 
-    if (!ok && fileCreated_) storage_.remove(savedName_);
+    bool delivered = conn_.sendStatus(saved_ ? proto::STATUS_OK : proto::STATUS_FAIL);
 
-    if (ok)
-        logLine("[" + conn_.label() + "] сохранён в " + storage_.dir() + "/" + savedName_ + " (" +
-                formatSize(size_) + "), соединение закрыто");
-    else if (received)
-        logLine("[" + conn_.label() + "] ОШИБКА: не удалось отправить клиенту подтверждение, "
-                "файл удалён, соединение закрыто");
-    else
+    if (!saved_) {
         logLine("[" + conn_.label() + "] передача не удалась, соединение закрыто");
+        return;
+    }
+    logLine("[" + conn_.label() + "] сохранён в " + storage_.dir() + "/" + savedName_ + " (" +
+            formatSize(size_) + ")");
+    if (delivered)
+        logLine("[" + conn_.label() + "] подтверждение отправлено, соединение закрыто");
+    else
+        logLine("[" + conn_.label() + "] ОШИБКА: не удалось отправить клиенту подтверждение, "
+                "соединение закрыто");
 }

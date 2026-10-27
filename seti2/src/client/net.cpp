@@ -4,6 +4,7 @@
 
 #include <netdb.h>
 #include <sys/socket.h>
+#include <sys/time.h>
 
 #include <memory>
 #include <stdexcept>
@@ -35,12 +36,23 @@ UniqueFd connectTo(const std::string& host, std::uint16_t port) {
     throwErrno("не удалось подключиться к " + host + ":" + service);
 }
 
+void setTimeouts(int fd, int seconds) {
+    timeval tv{};
+    tv.tv_sec = seconds;
+    if (::setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof tv) != 0)
+        throwErrno("не удалось установить таймаут приёма");
+    if (::setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof tv) != 0)
+        throwErrno("не удалось установить таймаут отправки");
+}
+
 void sendAll(int fd, const void* data, std::size_t len) {
     auto* p = static_cast<const char*>(data);
     while (len > 0) {
         ssize_t n = ::send(fd, p, len, MSG_NOSIGNAL);
         if (n < 0) {
             if (errno == EINTR) continue;
+            if (errno == EAGAIN || errno == EWOULDBLOCK)
+                throw std::runtime_error("сервер не принимает данные, истёк таймаут отправки");
             throwErrno("ошибка отправки данных");
         }
         p += n;
@@ -52,7 +64,10 @@ bool recvStatus(int fd, std::uint8_t& status) {
     for (;;) {
         ssize_t n = ::recv(fd, &status, 1, 0);
         if (n == 1) return true;
-        if (n < 0 && errno == EINTR) continue;
-        return false;
+        if (n == 0) return false;
+        if (errno == EINTR) continue;
+        if (errno == EAGAIN || errno == EWOULDBLOCK)
+            throw std::runtime_error("сервер не прислал ответ, истёк таймаут ожидания");
+        throwErrno("ошибка получения ответа сервера");
     }
 }

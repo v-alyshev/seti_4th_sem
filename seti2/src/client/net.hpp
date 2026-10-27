@@ -8,6 +8,8 @@
 
 UniqueFd connectTo(const std::string& host, std::uint16_t port);
 
+void setTimeouts(int fd, int seconds);
+
 void sendAll(int fd, const void* data, std::size_t len);
 
 bool recvStatus(int fd, std::uint8_t& status);

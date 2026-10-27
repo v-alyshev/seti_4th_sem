@@ -23,6 +23,11 @@ constexpr auto IDLE_TIMEOUT = std::chrono::seconds(60);
 Connection::Connection(int fd, std::string peer)
     : fd_(fd), label_(std::move(peer)), lastActivity_(SpeedMeter::Clock::now()) {}
 
+void Connection::beginFileBody() {
+    meter_ = SpeedMeter();
+    countingBody_ = true;
+}
+
 std::size_t Connection::readSome(void* buf, std::size_t len) {
     for (;;) {
         auto now = SpeedMeter::Clock::now();
@@ -52,7 +57,7 @@ std::size_t Connection::readSome(void* buf, std::size_t len) {
             throwErrno("ошибка приёма данных");
         }
         lastActivity_ = SpeedMeter::Clock::now();
-        meter_.add(static_cast<std::uint64_t>(n));
+        if (countingBody_) meter_.add(static_cast<std::uint64_t>(n));
         return static_cast<std::size_t>(n);
     }
 }

@@ -17,6 +17,7 @@
 
 namespace {
 constexpr std::size_t BUF_SIZE = 256 * 1024;
+constexpr int IO_TIMEOUT_SEC = 60;
 
 UniqueFd openFile(const std::string& path, std::uint64_t& size) {
     UniqueFd file(::open(path.c_str(), O_RDONLY));
@@ -85,6 +86,7 @@ void FileSender::transfer(const std::string& path, SendResult& result) const {
     result.size = header.size;
 
     UniqueFd sock = connectTo(host_, port_);
+    setTimeouts(sock.get(), IO_TIMEOUT_SEC);
 
     std::string sendError;
     try {
@@ -97,12 +99,19 @@ void FileSender::transfer(const std::string& path, SendResult& result) const {
 
     ::shutdown(sock.get(), SHUT_WR);
     std::uint8_t status = proto::STATUS_FAIL;
-    bool gotStatus = recvStatus(sock.get(), status);
+    bool gotStatus = false;
+    std::string recvError;
+    try {
+        gotStatus = recvStatus(sock.get(), status);
+    } catch (const std::exception& e) {
+        recvError = e.what();
+    }
 
     if (gotStatus && status != proto::STATUS_OK)
         throw std::runtime_error("сервер сообщил об ошибке" +
                                  (sendError.empty() ? std::string() : " (" + sendError + ")"));
     if (!sendError.empty()) throw std::runtime_error(sendError);
+    if (!recvError.empty()) throw std::runtime_error(recvError);
     if (!gotStatus) throw std::runtime_error("сервер закрыл соединение, не прислав ответ");
     result.ok = true;
 }

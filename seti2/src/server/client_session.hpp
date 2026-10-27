@@ -26,5 +26,6 @@ private:
     const UploadStorage& storage_;
     std::string savedName_;
     bool fileCreated_ = false;
+    bool saved_ = false;
     std::uint64_t size_ = 0;
 };

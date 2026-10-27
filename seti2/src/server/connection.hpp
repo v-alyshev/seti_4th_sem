@@ -13,6 +13,9 @@ public:
     void setFileName(const std::string& name) { label_ += " | " + name; }
     const std::string& label() const { return label_; }
 
+    void beginFileBody();
+    void endFileBody() { countingBody_ = false; }
+
     std::size_t readSome(void* buf, std::size_t len);
 
     void readExact(void* buf, std::size_t len);
@@ -28,4 +31,5 @@ private:
     std::string label_;
     SpeedMeter meter_;
     SpeedMeter::Clock::time_point lastActivity_;
+    bool countingBody_ = false;
 };
