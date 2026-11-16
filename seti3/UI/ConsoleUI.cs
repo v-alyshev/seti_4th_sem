@@ -55,7 +55,7 @@ public class ConsoleUI
         while (true)
         {
             Console.Write("Введите запрос. ");
-            var str = ReadLine();
+            string? str = ReadLine();
             if (str is not null)
             {
                 return str;
@@ -73,8 +73,8 @@ public class ConsoleUI
     {
         for (int i = 0; i < locations.Count; i++)
         {
-            var location = locations[i];
-            var fields = new[]
+            var location = locations[i]; 
+            IEnumerable<string?> fields = new[]
                 {
                     Field("Тип", TranslateTag(location.ObjType)),
                     Field("Страна", location.Country),
@@ -89,7 +89,7 @@ public class ConsoleUI
         while (true)
         {
             Console.WriteLine("Выберите локацию по ее номеру");
-            var str = ReadLine();
+            string? str = ReadLine();
             if (str is not null && int.TryParse(str, out var num) && 
                 (num > 0 &&  num <= locations.Count))
             {
@@ -128,7 +128,7 @@ public class ConsoleUI
     public bool AskChooseAnother()
     {
         Console.Write("Выбрать другую локацию из списка? (y/n): ");
-        var answer = ReadLine();
+        string? answer = ReadLine();
         return answer == "y" || answer =="д";
     }
 
@@ -205,7 +205,7 @@ public class ConsoleUI
 
     private string? ReadLine()
     {
-        var readedLine = Console.ReadLine() ?? throw new EndOfStreamException("Ввод прерван");
+        string readedLine = Console.ReadLine() ?? throw new EndOfStreamException("Ввод прерван");
         if (!string.IsNullOrWhiteSpace(readedLine))
         {
             return readedLine.Trim();

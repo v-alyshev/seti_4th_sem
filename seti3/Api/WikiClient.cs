@@ -17,16 +17,16 @@ public class WikiClient(string language, HttpClient client) : IPlacesClient
         string parsedCoordinates = string.Create(CultureInfo.InvariantCulture,
             $"{coordinates.Latitude}|{coordinates.Longitude}");
         
-        var url = UrlBuilder.Build(_address, new Dictionary<string, object>()
+        string url = UrlBuilder.Build(_address, new Dictionary<string, object>()
             {
                 ["action"] = "query", ["list"] = "geosearch", ["gscoord"] = parsedCoordinates, 
                 ["gsradius"] = Gsradius, ["gslimit"] = Gslimit, ["format"] = "json", ["formatversion"] = 2
             });
         var response = await client.GetFromJsonAsync<WikiGeosearchResponse>(url, JsonSet.Options);
-        var query = CheckValid(response?.Error, response?.Query);
+        GeoQuery query = CheckValid(response?.Error, response?.Query);
         
         var places = new List<Place>();
-        foreach (var nonParsedPlace in query.GeoSearch)
+        foreach (GeoSearchPlace nonParsedPlace in query.GeoSearch)
         {
             places.Add(new Place(nonParsedPlace.PageId, nonParsedPlace.Title, nonParsedPlace.Dist, null));
         }
@@ -36,14 +36,19 @@ public class WikiClient(string language, HttpClient client) : IPlacesClient
 
     public async Task<string?> GetDescAsync(long pageId)
     {
-        var url = UrlBuilder.Build(_address, new Dictionary<string, object>()
+        string url = UrlBuilder.Build(_address, new Dictionary<string, object>()
         {
             ["action"] = "query", ["prop"] = "extracts", ["pageids"] = pageId, ["exintro"] = 1,
             ["explaintext"] = 1, ["format"] = "json", ["formatversion"] = 2
         });
         var response = await client.GetFromJsonAsync<WikiExtractResponse>(url, JsonSet.Options);
-        var query = CheckValid(response?.Error, response?.Query);
+        ExtractQuery query = CheckValid(response?.Error, response?.Query);
 
+        if (query.Pages.Count == 0)
+        {
+            throw new InvalidOperationException("Ошибка википедии: вернулся пустой массив");
+        }
+        
         return query.Pages[0].Extract;
     }
 

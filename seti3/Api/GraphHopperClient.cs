@@ -11,7 +11,7 @@ public class GraphHopperClient(string language, HttpClient client, string key) :
     
     public async Task<List<Location>>SearchLocationsAsync(string request)
     {
-        var url = UrlBuilder.Build(Address, new Dictionary<string, object>()
+        string url = UrlBuilder.Build(Address, new Dictionary<string, object>
         {
             ["q"] = request, ["locale"] = language, ["limit"] = Limit, ["key"] = key 
         });

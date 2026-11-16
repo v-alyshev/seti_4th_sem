@@ -49,11 +49,11 @@ public class PlaceService(IGeocodingClient ghClient,
     }
 
     private async Task<Place[]> FindPlacesAndDescAsync(Coordinates coordinates)
-    {
-        var wikiResult = await wClient.FindPlacesAsync(coordinates);
-        var paralledDescs = wikiResult.Select(DescribePlaceAsync);
+    { 
+        List<Place> wikiResult = await wClient.FindPlacesAsync(coordinates);
+        IEnumerable<Task<Place>> paralledDescs = wikiResult.Select(DescribePlaceAsync);
         
-        var describedPlaces = await Task.WhenAll(paralledDescs);
+        Place[] describedPlaces = await Task.WhenAll(paralledDescs);
         return describedPlaces;
     }
 
@@ -61,7 +61,7 @@ public class PlaceService(IGeocodingClient ghClient,
     {
         try
         {
-            var desc = await wClient.GetDescAsync(place.PageNum);
+            string? desc = await wClient.GetDescAsync(place.PageNum);
             return place with { Description = desc };
         }
         catch (Exception e) when (ErrorMessages.IsExpected(e))

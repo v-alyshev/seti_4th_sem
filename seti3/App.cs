@@ -3,6 +3,7 @@ using seti3.Api;
 using seti3.Services;
 using seti3.UI;
 using seti3.Config;
+using seti3.Models;
 
 namespace seti3;
 
@@ -33,8 +34,8 @@ public sealed class App(HttpClient http, PlaceService service, ConsoleUI ui) : I
         {
             try
             {
-                var query = ui.SearchQuery();
-                var locations = await service.GetLocationsAsync(query);
+                string query = ui.SearchQuery();
+                List<Location> locations = await service.GetLocationsAsync(query);
                 if (locations.Count == 0)
                 {
                     ui.ShowNothing();

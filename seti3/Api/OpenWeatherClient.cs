@@ -14,7 +14,7 @@ public class OpenWeatherClient(string language, HttpClient client, string key) :
  }
  public async Task<Weather> GetWeatherInfoAsync(Coordinates coordinates)
  {
-  var url = UrlBuilder.Build(Address, new Dictionary<string, object>()
+  string url = UrlBuilder.Build(Address, new Dictionary<string, object>()
   {
    ["lat"] = coordinates.Latitude, ["lon"] = coordinates.Longitude,
    ["units"] = Units, ["lang"] = language, ["appid"] = key
@@ -25,8 +25,8 @@ public class OpenWeatherClient(string language, HttpClient client, string key) :
   {
    throw new InvalidOperationException("OpenWeatherApi вернул null");
   }
-
-  return new Weather(response.Weather[0].Description, response.Main.Temp,
+  
+  return new Weather(response.Weather.FirstOrDefault()?.Description ?? "Описание отсуствует", response.Main.Temp,
    response.Main.FeelsLike, response.Main.Humidity, response.Wind.Speed, ToMmHg(response.Main.Pressure) );
  }
 }
