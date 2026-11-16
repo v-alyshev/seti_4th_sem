@@ -1,17 +1,23 @@
-﻿using seti3;
+﻿namespace seti3;
 
-try
+public static class Program
 {
-    using var app = App.Create();
-    await app.RunAsync();
-    return 0;
-}
-catch (EndOfStreamException)
-{
-    return 0;
-}
-catch (Exception error) when (ErrorMessages.IsExpected(error))
-{
-    Console.Error.WriteLine($"Ошибка: {ErrorMessages.Describe(error)}");
-    return 1;
+    public static async Task<int> Main()
+    {
+        try
+        {
+            using var app = App.Create();
+            await app.RunAsync();
+            return 0;
+        }
+        catch (EndOfStreamException)
+        {
+            return 0;
+        }
+        catch (Exception error) when (ErrorMessages.IsExpected(error))
+        {
+            Console.Error.WriteLine($"Ошибка: {ErrorMessages.Describe(error)}");
+            return 1;
+        }
+    }
 }
